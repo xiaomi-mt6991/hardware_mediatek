@@ -164,12 +164,27 @@ bool VendorInterface::Initialize(InitializeCompleteCallback initialize_complete_
         return false;
     }
     g_vendor_interface = new VendorInterface();
-    return g_vendor_interface->Open(initialize_complete_cb, cmd_cb, acl_cb, sco_cb, event_cb,
-                                    iso_cb, disconnect_cb);
+    if (!g_vendor_interface->Open(initialize_complete_cb, cmd_cb, acl_cb, sco_cb, event_cb,
+                                  iso_cb, disconnect_cb)) {
+        // Open() failed midway: drop the half-opened instance so a later
+        // Close() cannot issue vendor ops to it (null deref in the vendor
+        // library) and a later Initialize() is not wedged by the stale
+        // "No previous Shutdown()?" check above.
+        delete g_vendor_interface;
+        g_vendor_interface = nullptr;
+        return false;
+    }
+    return true;
 }
 
 void VendorInterface::Shutdown() {
-    LOG_ALWAYS_FATAL_IF(!g_vendor_interface, "%s: No Vendor interface!", __func__);
+    // No-op when there is no instance: BluetoothHci::initialize() calls
+    // Shutdown() on the Initialize() failure path, and Initialize() no
+    // longer leaves a half-opened instance behind. (A FATAL here would turn
+    // every init failure into a service abort.)
+    if (!g_vendor_interface) {
+        return;
+    }
     g_vendor_interface->Close();
     delete g_vendor_interface;
     g_vendor_interface = nullptr;
@@ -255,13 +270,17 @@ bool VendorInterface::Open(InitializeCompleteCallback initialize_complete_cb,
     firmware_startup_timer_ = new FirmwareStartupTimer();
     lib_interface_->op(BT_VND_OP_FW_CFG, nullptr);
 
+    initialized_ = true;
     return true;
 }
 
 void VendorInterface::Close() {
     // These callbacks may send HCI events (vendor-dependent), so make sure to
     // StopWatching the file descriptor after this.
-    if (lib_interface_ != nullptr) {
+    // Skip vendor ops unless Open() completed: on a half-opened blob the
+    // vendor library dereferences null (tombstone in mtk_bt_op via
+    // USERIAL_CLOSE). Resource teardown below stays unconditional.
+    if (initialized_ && lib_interface_ != nullptr) {
         bt_vendor_lpm_mode_t mode = BT_VND_LPM_DISABLE;
         lib_interface_->op(BT_VND_OP_LPM_SET_MODE, &mode);
     }
@@ -273,7 +292,7 @@ void VendorInterface::Close() {
         hci_ = nullptr;
     }
 
-    if (lib_interface_ != nullptr) {
+    if (initialized_ && lib_interface_ != nullptr) {
         lib_interface_->op(BT_VND_OP_USERIAL_CLOSE, nullptr);
 
         int power_state = BT_VND_PWR_OFF;
@@ -281,6 +300,7 @@ void VendorInterface::Close() {
 
         lib_interface_->cleanup();
         lib_interface_ = nullptr;
+        initialized_ = false;
     }
 
     if (lib_handle_ != nullptr) {

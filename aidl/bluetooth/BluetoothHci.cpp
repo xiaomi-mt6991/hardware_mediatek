@@ -97,6 +97,7 @@ BluetoothHci::BluetoothHci() {
 
 ndk::ScopedAStatus BluetoothHci::initialize(const std::shared_ptr<IBluetoothHciCallbacks>& cb) {
     ALOGI("Initializing Bluetooth HCI via AIDL");
+    std::lock_guard<std::recursive_mutex> seq_guard(mSeqMutex);
 
     if (cb == nullptr) {
         ALOGE("cb == nullptr! -> Unable to call initializationComplete(ERR)");
@@ -154,6 +155,7 @@ ndk::ScopedAStatus BluetoothHci::initialize(const std::shared_ptr<IBluetoothHciC
 
 ndk::ScopedAStatus BluetoothHci::close() {
     ALOGI("%s:Bluetooth HCI close sequence initiated via AIDL", __func__);
+    std::lock_guard<std::recursive_mutex> seq_guard(mSeqMutex);
     {
         std::lock_guard<std::mutex> guard(mStateMutex);
         if (mState != HalState::ONE_CLIENT) {

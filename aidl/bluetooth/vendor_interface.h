@@ -64,6 +64,11 @@ class VendorInterface {
 
     void* lib_handle_ = nullptr;
     bt_vendor_interface_t* lib_interface_ = nullptr;
+    // Tracks whether Open() ran to completion (UART opened, HCI running).
+    // Close() must not issue vendor ops on a half-opened blob: the vendor
+    // library dereferences null internally (observed tombstone: mtk_bt_op
+    // from Close() via USERIAL_CLOSE after a failed/incomplete Open()).
+    bool initialized_ = false;
     AsyncFdWatcher fd_watcher_;
     InitializeCompleteCallback initialize_complete_cb_;
     H4Protocol* hci_ = nullptr;

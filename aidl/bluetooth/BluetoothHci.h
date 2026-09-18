@@ -20,6 +20,7 @@
 #include <aidl/android/hardware/bluetooth/BnBluetoothHci.h>
 #include <aidl/android/hardware/bluetooth/IBluetoothHciCallbacks.h>
 
+#include <mutex>
 #include <string>
 
 #include "h4_protocol.h"
@@ -54,6 +55,10 @@ class BluetoothHci : public BnBluetoothHci {
 
     // Don't close twice or open before close is complete
     std::mutex mStateMutex;
+    // Serializes whole init/close sequences (init and close call into each
+    // other on failure paths, hence recursive). Without this, a second
+    // init/close can interleave mid-teardown and drive vendor ops twice.
+    std::recursive_mutex mSeqMutex;
     enum class HalState {
         READY,
         INITIALIZING,
