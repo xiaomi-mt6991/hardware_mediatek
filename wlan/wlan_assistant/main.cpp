@@ -268,6 +268,13 @@ void* wlan_files_monitor(void* /* pdata */) {
 }
 
 int main(int /* argc */, char** /* argv */) {
+    // Enable WiFi power save mode early to reduce idle power draw
+    // and prevent WLAN wakelocks. wowlan_triggers=disconnect is
+    // removed from the wpa_supplicant overlays so the firmware
+    // won't wake the system on disconnect events.
+    SetProperty("net.wifi.ps_enabled", "1");
+    SetProperty("net.wifi.pps", "1");
+
     wlan_files_monitor(nullptr);
     return 0;
 }
